@@ -129,11 +129,14 @@ def test_gen_obtaining_temperature_information_message():
     result = LPB40B.gen_obtaining_temperature_information_message()
     assert result == expected, f"Expected {expected.hex(' ')}, got {result.hex(' ')}"
 
+
+# ** 0x03 Set Measurement Frequency Tests ********************************************
+
 def test_gen_set_measurement_frequency_message_valid():
     """Check building a valid frequency message."""
     result = LPB40B.gen_set_measurement_frequency_message(10)
     # freq=10 → 0x0A 00 00 00 in little-endian
-    expected = bytes([0x55, 0x03, 0x0A, 0x00, 0x00, 0x00, 0x5F, 0xAA])
+    expected = bytes([0x55, 0x03, 0x00, 0x00, 0x00, 0x0A, 0x9F, 0xAA])
     assert result == expected, f"Expected {expected.hex(' ')}, got {result.hex(' ')}"
 
 def test_gen_set_measurement_frequency_message_invalid_low():
@@ -145,3 +148,30 @@ def test_gen_set_measurement_frequency_message_invalid_high():
     """Frequency > 2000 should raise ValueError."""
     with pytest.raises(ValueError):
         LPB40B.gen_set_measurement_frequency_message(3000)
+
+
+# ** 0x04 Set Data Format Tests **************************************************
+def test_gen_set_data_format_byte_message():
+    msg = LPB40B.gen_set_data_format_byte()
+    # Expected wrapped message from documentation
+    expected = bytes([0x55, 0x04, 0x00, 0x00, 0x00, 0x01, 0x2E, 0xAA])
+    assert msg == expected, f"Expected {expected.hex()}, got {msg.hex()}"
+    # Sanity checks
+    assert msg[0] == LPB40B.START_BYTE
+    assert msg[-1] == LPB40B.STOP_BYTE
+    assert len(msg) == 8
+
+# ** 0x04 Set Data Format Tests **************************************************
+def test_gen_set_data_format_pixhawk_message():
+    msg = LPB40B.gen_set_data_format_pixhawk()
+    # Expected wrapped message from documentation
+    expected = bytes([0x55, 0x04, 0x00, 0x00, 0x00, 0x02, 0x7D, 0xAA])
+    assert msg == expected, f"Expected {expected.hex()}, got {msg.hex()}"
+    # Sanity checks
+    assert msg[0] == LPB40B.START_BYTE
+    assert msg[-1] == LPB40B.STOP_BYTE
+    assert len(msg) == 8
+
+
+
+

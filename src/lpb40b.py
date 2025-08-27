@@ -80,7 +80,11 @@ class LPB40B:
 
     @staticmethod
     def gen_obtaining_temperature_information_message() -> bytes:
-        """Generate wrapped message for 'Obtain Temperature Information' (0x02)."""
+        """
+        Generate wrapped message for 'Obtain Temperature Information' (0x02).
+        
+        NOTE: This does not seem to get a response from the device
+        """
         payload = bytes([LPB40B.MSG_OBTAIN_TEMPERATURE, 0x00, 0x00, 0x00, 0x00])
         return LPB40B.add_protocol_bytes(payload)
 
@@ -108,11 +112,34 @@ class LPB40B:
             raise ValueError("Measurement frequency must be in range 1..2000")
 
         # Convert to little-endian uint32 (matches most device protocols of this style)
-        freq_bytes = freq.to_bytes(4, byteorder="little", signed=False)
+        freq_bytes = freq.to_bytes(4, byteorder="big", signed=False)
 
         # Payload: [command, b0, b1, b2, b3]
         payload = bytes([LPB40B.MSG_SET_MEASUREMENT_FREQ]) + freq_bytes
         return LPB40B.add_protocol_bytes(payload)
+
+    @staticmethod
+    def gen_set_data_format_byte() -> bytes:
+        """
+        Generate the message to set the sensor into BYTE format for measurements.
+        """
+        # payload = [CMD, 00, 00, 00, 01]
+        BYTE_DATA_FORMAT_SETTING = 0x01
+        payload = bytes([LPB40B.MSG_FORMAT_DATA, 0x00, 0x00, 0x00, BYTE_DATA_FORMAT_SETTING])
+        crc = LPB40B.gen_crc(payload)
+        return bytes([LPB40B.START_BYTE]) + payload + bytes([crc, LPB40B.STOP_BYTE])
+
+    @staticmethod
+    def gen_set_data_format_pixhawk() -> bytes:
+        """
+        Generate the message to set the sensor into PIXHAWK format for measurements.
+        """
+        # payload = [CMD, 00, 00, 00, 01]
+        PIXHAWK_DATA_FORMAT_SETTING = 0x02
+        payload = bytes([LPB40B.MSG_FORMAT_DATA, 0x00, 0x00, 0x00, PIXHAWK_DATA_FORMAT_SETTING])
+        crc = LPB40B.gen_crc(payload)
+        return bytes([LPB40B.START_BYTE]) + payload + bytes([crc, LPB40B.STOP_BYTE])
+
 
 
 if __name__ == "__main__":

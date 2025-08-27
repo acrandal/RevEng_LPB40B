@@ -24,6 +24,28 @@ class LPB40B:
     MSG_CONFIGURE_ADDRESS     = 0x11
     MSG_SET_BAUD_RATE         = 0x12
 
+    # baud rate lookup table
+    BAUD_RATE_MAP = {
+        0: 0x00,      # adaptive
+        300: 0x01,
+        600: 0x02,
+        1200: 0x03,
+        2400: 0x04,
+        4800: 0x05,
+        9600: 0x06,
+        14400: 0x07,
+        19200: 0x08,
+        38400: 0x09,
+        56000: 0x0A,
+        57600: 0x0B,
+        115200: 0x0C,
+        230400: 0x0D,
+        256000: 0x0E,
+        460800: 0x0F,
+        921600: 0x10,
+    }
+
+    # ** ************************************************************************
     def __init__(self, ser: Serial):
         self.serial_port_check(ser)
         self.ser = ser
@@ -92,11 +114,12 @@ class LPB40B:
     def gen_set_measurement_frequency_message(freq: int) -> bytes:
         """
         Generate wrapped message for 'Set Measurement Frequency' (0x03).
-    
+        NOTE: This function caps at 500 hz to not move the sensor into high speed frame mode
+   
         Parameters
         ----------
         freq : int
-            Desired measurement frequency in Hz (1..2000).
+            Desired measurement frequency in Hz (1..500).
     
         Returns
         -------
@@ -108,8 +131,8 @@ class LPB40B:
         ValueError
             If frequency is outside the allowed range.
         """
-        if not (1 <= freq <= 2000):
-            raise ValueError("Measurement frequency must be in range 1..2000")
+        if not (1 <= freq <= 500):
+            raise ValueError("Measurement frequency must be in range 1..500")
 
         # Convert to little-endian uint32 (matches most device protocols of this style)
         freq_bytes = freq.to_bytes(4, byteorder="big", signed=False)
@@ -140,7 +163,68 @@ class LPB40B:
         crc = LPB40B.gen_crc(payload)
         return bytes([LPB40B.START_BYTE]) + payload + bytes([crc, LPB40B.STOP_BYTE])
 
+    # ** 0x0D - Setting Measurment Mode Commands ****************************************************
+    @staticmethod
+    def gen_set_measurement_mode_continuous_startup() -> bytes:
+        """
+        Generate the message to set the sensor continually measure distance at boot.
+        """
+        MEASURMENT_MODE_CONTINUOUS_STARTUP = 0x00
+        payload = bytes([LPB40B.MSG_SET_MEASUREMENT_MODE, 0x00, 0x00, 0x00, MEASURMENT_MODE_CONTINUOUS_STARTUP])
+        crc = LPB40B.gen_crc(payload)
+        return bytes([LPB40B.START_BYTE]) + payload + bytes([crc, LPB40B.STOP_BYTE])
+
+    @staticmethod
+    def gen_set_measurement_mode_single() -> bytes:
+        """
+        Generate the message to set the sensor to only measure once when requested.
+        """
+        MEASURMENT_MODE_SINGLE = 0x01
+        payload = bytes([LPB40B.MSG_SET_MEASUREMENT_MODE, 0x00, 0x00, 0x00, MEASURMENT_MODE_SINGLE])
+        crc = LPB40B.gen_crc(payload)
+        return bytes([LPB40B.START_BYTE]) + payload + bytes([crc, LPB40B.STOP_BYTE])
+
+    @staticmethod
+    def gen_set_measurement_mode_continuous_default_stopped() -> bytes:
+        """
+        Generate the message to set the sensor to measure continuously after being started
+        """
+        MEASURMENT_MODE_CONTINUOUS_DEFAULT_STOPPED = 0x02
+        payload = bytes([LPB40B.MSG_SET_MEASUREMENT_MODE, 0x00, 0x00, 0x00, MEASURMENT_MODE_CONTINUOUS_DEFAULT_STOPPED])
+        crc = LPB40B.gen_crc(payload)
+        return bytes([LPB40B.START_BYTE]) + payload + bytes([crc, LPB40B.STOP_BYTE])
+
+    # ** 0x05 Start Measuring Messages *****************************************************************
+    @staticmethod
+    def gen_start_measuring() -> bytes:
+        """ Generate the message to start measuring """
+        payload = bytes([LPB40B.MSG_START_MEASUREMENT, 0x00, 0x00, 0x00, 0x00])
+        crc = LPB40B.gen_crc(payload)
+        return bytes([LPB40B.START_BYTE]) + payload + bytes([crc, LPB40B.STOP_BYTE])
+
+    # ** 0x06 Stop Measuring Messages *****************************************************************
+    @staticmethod
+    def gen_stop_measuring() -> bytes:
+        """ Generate the message to stop measuring """
+        payload = bytes([LPB40B.MSG_STOP_MEASUREMENT, 0x00, 0x00, 0x00, 0x00])
+        crc = LPB40B.gen_crc(payload)
+        return bytes([LPB40B.START_BYTE]) + payload + bytes([crc, LPB40B.STOP_BYTE])
+
+    # ** 0x12 Set Baud Rate Messages ******************************************************************
+
+    @staticmethod
+    def gen_set_baud_rate(baud_rate: int) -> bytes:
+        """ Generate the message to set the sensor's baud rate.  """
+
+        if baud_rate not in LPB40B.BAUD_RATE_MAP:
+            raise ValueError(f"Unsupported baud rate: {baud_rate}")
+        
+        baud_hex = LPB40B.BAUD_RATE_MAP[baud_rate]
+        payload = bytes([LPB40B.MSG_SET_BAUD_RATE, 0x00, 0x00, 0x00, baud_hex])
+        crc = LPB40B.gen_crc(payload)
+        return bytes([LPB40B.START_BYTE]) + payload + bytes([crc, LPB40B.STOP_BYTE])
+
 
 
 if __name__ == "__main__":
-    print("Testing the driver")
+    print("Testing the driver: see pytest")

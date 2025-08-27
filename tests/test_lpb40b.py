@@ -145,7 +145,7 @@ def test_gen_set_measurement_frequency_message_invalid_low():
         LPB40B.gen_set_measurement_frequency_message(0)
 
 def test_gen_set_measurement_frequency_message_invalid_high():
-    """Frequency > 2000 should raise ValueError."""
+    """Frequency > 500 should raise ValueError."""
     with pytest.raises(ValueError):
         LPB40B.gen_set_measurement_frequency_message(3000)
 
@@ -156,22 +156,90 @@ def test_gen_set_data_format_byte_message():
     # Expected wrapped message from documentation
     expected = bytes([0x55, 0x04, 0x00, 0x00, 0x00, 0x01, 0x2E, 0xAA])
     assert msg == expected, f"Expected {expected.hex()}, got {msg.hex()}"
-    # Sanity checks
     assert msg[0] == LPB40B.START_BYTE
     assert msg[-1] == LPB40B.STOP_BYTE
     assert len(msg) == 8
 
-# ** 0x04 Set Data Format Tests **************************************************
 def test_gen_set_data_format_pixhawk_message():
     msg = LPB40B.gen_set_data_format_pixhawk()
     # Expected wrapped message from documentation
     expected = bytes([0x55, 0x04, 0x00, 0x00, 0x00, 0x02, 0x7D, 0xAA])
     assert msg == expected, f"Expected {expected.hex()}, got {msg.hex()}"
-    # Sanity checks
     assert msg[0] == LPB40B.START_BYTE
     assert msg[-1] == LPB40B.STOP_BYTE
     assert len(msg) == 8
 
 
+# ** 0x0D Set Measurement Mode Commands **************************************************
+def test_gen_set_measurement_mode_continuous_startup_message():
+    msg = LPB40B.gen_set_measurement_mode_continuous_startup()
+    # Expected wrapped message from documentation
+    expected = bytes([0x55, 0x0D, 0x00, 0x00, 0x00, 0x00, 0xF2, 0xAA])
+    assert msg == expected, f"Expected {expected.hex()}, got {msg.hex()}"
+    assert msg[0] == LPB40B.START_BYTE
+    assert msg[-1] == LPB40B.STOP_BYTE
+    assert len(msg) == 8
 
+def test_gen_set_measurement_mode_single():
+    msg = LPB40B.gen_set_measurement_mode_single()
+    # Expected wrapped message from documentation
+    expected = bytes([0x55, 0x0D, 0x00, 0x00, 0x00, 0x01, 0xC3, 0xAA])
+    assert msg == expected, f"Expected {expected.hex()}, got {msg.hex()}"
+    assert msg[0] == LPB40B.START_BYTE
+    assert msg[-1] == LPB40B.STOP_BYTE
+    assert len(msg) == 8
+
+def test_gen_set_measurement_mode_continuous_default_stopped():
+    msg = LPB40B.gen_set_measurement_mode_continuous_default_stopped()
+    # Expected wrapped message from documentation
+    expected = bytes([0x55, 0x0D, 0x00, 0x00, 0x00, 0x02, 0x90, 0xAA])
+    assert msg == expected, f"Expected {expected.hex()}, got {msg.hex()}"
+    assert msg[0] == LPB40B.START_BYTE
+    assert msg[-1] == LPB40B.STOP_BYTE
+    assert len(msg) == 8
+
+
+# ** 0x05 Gen Start Measurement Command **************************************************
+def test_gen_start_measuring():
+    msg = LPB40B.gen_start_measuring()
+    # Expected wrapped message from documentation
+    expected = bytes([0x55, 0x05, 0x00, 0x00, 0x00, 0x00, 0xCC, 0xAA])
+    assert msg == expected, f"Expected {expected.hex()}, got {msg.hex()}"
+    assert msg[0] == LPB40B.START_BYTE
+    assert msg[-1] == LPB40B.STOP_BYTE
+    assert len(msg) == 8
+
+# ** 0x06 Gen Stop Measurement Command **************************************************
+def test_gen_stop_measuring():
+    msg = LPB40B.gen_stop_measuring()
+    # Expected wrapped message from documentation
+    expected = bytes([0x55, 0x06, 0x00, 0x00, 0x00, 0x00, 0x88, 0xAA])
+    assert msg == expected, f"Expected {expected.hex()}, got {msg.hex()}"
+    assert msg[0] == LPB40B.START_BYTE
+    assert msg[-1] == LPB40B.STOP_BYTE
+    assert len(msg) == 8
+
+# ** 0x12 Gen Set Baud Rate Messages ******************************************************
+def test_gen_set_baud_rate_adaptive():
+    msg = LPB40B.gen_set_baud_rate(0)
+    # Expected payload: 12 00 00 00 00
+    expected_payload = bytes([LPB40B.MSG_SET_BAUD_RATE, 0x00, 0x00, 0x00, LPB40B.BAUD_RATE_MAP[0]])
+    expected_crc = LPB40B.gen_crc(expected_payload)
+    expected_msg = bytes([LPB40B.START_BYTE]) + expected_payload + bytes([expected_crc, LPB40B.STOP_BYTE])
+    assert msg == expected_msg
+    assert msg[1] == LPB40B.MSG_SET_BAUD_RATE  # message type
+    assert msg[-2] == expected_crc             # CRC correctness
+
+def test_gen_set_baud_rate_115200():
+    msg = LPB40B.gen_set_baud_rate(115200)
+    expected_payload = bytes([LPB40B.MSG_SET_BAUD_RATE, 0x00, 0x00, 0x00, LPB40B.BAUD_RATE_MAP[115200]])
+    expected_crc = LPB40B.gen_crc(expected_payload)
+    expected_msg = bytes([LPB40B.START_BYTE]) + expected_payload + bytes([expected_crc, LPB40B.STOP_BYTE])
+    assert msg == expected_msg
+    assert msg[5] == LPB40B.BAUD_RATE_MAP[115200]  # correct baud selector
+
+def test_gen_set_baud_rate_invalid():
+    with pytest.raises(ValueError) as excinfo:
+        LPB40B.gen_set_baud_rate(12345)
+    assert "Unsupported baud rate" in str(excinfo.value)
 

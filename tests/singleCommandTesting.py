@@ -21,11 +21,11 @@ except Exception as e:
     sys.exit(1)
 
 # Send the command
-ser.write(single_mode_cmd)
-ser.flush()
+#ser.write(single_mode_cmd)
+#ser.flush()
 
-ser.write(start_measurement_cmd)
-ser.flush()
+#ser.write(start_measurement_cmd)
+#ser.flush()
 
 print("Command sent. Listening for data (Ctrl-C to stop)...")
 

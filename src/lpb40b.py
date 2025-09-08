@@ -6,7 +6,7 @@ class LPB40B:
     # Message protocol standards
     START_BYTE = 0x55
     STOP_BYTE = 0xAA
-    POLY = 0x31  # x^8 + x^5 + x^4 + 1 # CRC polynomial
+    CRC_POLYNOMIAL = 0x31  # x^8 + x^5 + x^4 + 1 # CRC polynomial
     CRC_START_VALUE = 0x00
 
     # Message type IDs (go in payload[0])
@@ -47,11 +47,11 @@ class LPB40B:
 
     # ** ************************************************************************
     def __init__(self, ser: Serial):
-        self.serial_port_check(ser)
-        self.ser = ser
+        self._serial_port_check(ser)
+        self._ser = ser
 
-    def serial_port_check(self, ser):
-        # List only what your class really needs
+    def _serial_port_check(self, ser):
+        # List only what your class really needs (allows mocking)
         required = ["write", "read", "close", "is_open"]
 
         for name in required:
@@ -61,7 +61,7 @@ class LPB40B:
         # Optional: make sure it's actually open
         if hasattr(ser, "is_open") and not ser.is_open:
             raise ValueError("Serial port must be open")
-        
+
     @staticmethod
     def gen_crc(msg_bytes: bytes) -> int:
         """
@@ -73,7 +73,7 @@ class LPB40B:
             crc ^= byte
             for _ in range(8):
                 if crc & 0x80:
-                    crc = ((crc << 1) ^ LPB40B.POLY) & 0xFF
+                    crc = ((crc << 1) ^ LPB40B.CRC_POLYNOMIAL) & 0xFF
                 else:
                     crc = (crc << 1) & 0xFF
         return crc
@@ -87,12 +87,6 @@ class LPB40B:
         crc = LPB40B.gen_crc(msg_bytes)
         return bytes([LPB40B.START_BYTE]) + msg_bytes + bytes([crc, LPB40B.STOP_BYTE])
 
-    def send(self, data: bytes):
-        self.ser.write(data)
-
-    def receive(self, n: int) -> bytes:
-        return self.ser.read(n)
-
     # ----------- message builders -----------
     @staticmethod
     def gen_obtaining_equipment_information_message() -> bytes:
@@ -105,7 +99,7 @@ class LPB40B:
         """
         Generate wrapped message for 'Obtain Temperature Information' (0x02).
         
-        NOTE: This does not seem to get a response from the device
+        NOTE: This does not seem to get a response from the device as indicated in the documentation
         """
         payload = bytes([LPB40B.MSG_OBTAIN_TEMPERATURE, 0x00, 0x00, 0x00, 0x00])
         return LPB40B.add_protocol_bytes(payload)
@@ -224,6 +218,56 @@ class LPB40B:
         crc = LPB40B.gen_crc(payload)
         return bytes([LPB40B.START_BYTE]) + payload + bytes([crc, LPB40B.STOP_BYTE])
 
+    # ** ***********************************************************************************************
+    # ** Public API ************************************************************************************
+    # ** ***********************************************************************************************
+
+    def set_measurement_frequency(self, new_freq: int) -> None:
+        """
+        Set the LP40's sampling frequency
+
+        Parameters
+        ----------
+        new_freq : int
+            Desired measurement frequency in Hz (1..500).
+        """
+        msg = self.gen_set_measurement_frequency_message(new_freq)
+        self._ser.write(msg)
+
+    def set_measurement_mode_continuous_startup(self) -> None:
+        msg = self.gen_set_measurement_mode_continuous_startup()
+        self._ser.write(msg)
+    
+    def set_measurement_mode_single_measurement(self) -> None:
+        msg = self.gen_set_measurement_mode_single()
+        self._ser.write(msg)
+
+    def set_measurement_mode_continuous_default_stopped(self) -> None:
+        msg = self.gen_set_measurement_mode_continuous_default_stopped()
+        self._ser.write(msg)
+
+    def stop_measuring(self) -> None:
+        msg = self.gen_stop_measuring()
+        self._ser.write(msg)
+
+    def start_measuring(self) -> None:
+        msg = self.gen_start_measuring()
+        self._ser.write(msg)
+        self._ser.read(8)       # Clear the response from the device, which is one frame
+
+
+
+    # NOTE: The device only seems to work in byte format anyway - suspending extra API
+    # def set_data_format_byte(self) -> None:
+    #     """ Set LP40 to send distance measurements in byte format (big endian) """
+    #     msg = self.gen_set_data_format_byte()
+    #     self._ser.write(msg)
+
+    # NOTE: This message doesn't seem to have any effect on the device
+    # def set_data_format_pixhawk(self) -> None:
+    #     """ Set LP40 to send distance measurements in pixhawk format (string number ending \r\n) """
+    #     msg = self.gen_set_data_format_pixhawk()
+    #     self._ser.write(msg)
 
 
 if __name__ == "__main__":

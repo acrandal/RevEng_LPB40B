@@ -1,274 +1,107 @@
-
+import time
+import serial  # pyserial
 import logging
-from serial import Serial
 
 class LPB40B:
-    # Message protocol standards
-    START_BYTE = 0x55
-    STOP_BYTE = 0xAA
-    CRC_POLYNOMIAL = 0x31  # x^8 + x^5 + x^4 + 1 # CRC polynomial
-    CRC_START_VALUE = 0x00
+    START_BYTE      = 0x55
+    STOP_BYTE       = 0xAA
+    CRC_POLYNOMIAL  = 0x31
+    CRC_START_VALUE = 0
 
-    # Message type IDs (go in payload[0])
-    MSG_GET_DEVICE_INFO       = 0x01
-    MSG_OBTAIN_TEMPERATURE    = 0x02
-    MSG_SET_MEASUREMENT_FREQ  = 0x03
-    MSG_FORMAT_DATA           = 0x04
-    MSG_START_MEASUREMENT     = 0x05
-    MSG_STOP_MEASUREMENT      = 0x06
-    MSG_MEASUREMENT_DATA_RET  = 0x07
-    MSG_SAVE_SETTINGS         = 0x08
-    MSG_GET_SERIAL_NUMBER     = 0x0A
-    MSG_SET_MEASUREMENT_MODE  = 0x0D
-    MSG_HIGHSPEED_DATA_RET    = 0x0E
-    MSG_CONFIGURE_ADDRESS     = 0x11
-    MSG_SET_BAUD_RATE         = 0x12
+    # commands from SEN058 communications protocol
+    CMD_GET_DEVICE_INFO         = 0x01
+    CMD_START_MEASUREMENT       = 0x05
+    CMD_MEASUREMENT_DATA        = 0x07
+    CMD_SET_MEASUREMENT_MODE    = 0x0D
 
-    # baud rate lookup table
-    BAUD_RATE_MAP = {
-        0: 0x00,      # adaptive
-        300: 0x01,
-        600: 0x02,
-        1200: 0x03,
-        2400: 0x04,
-        4800: 0x05,
-        9600: 0x06,
-        14400: 0x07,
-        19200: 0x08,
-        38400: 0x09,
-        56000: 0x0A,
-        57600: 0x0B,
-        115200: 0x0C,
-        230400: 0x0D,
-        256000: 0x0E,
-        460800: 0x0F,
-        921600: 0x10,
-    }
-
-    # ** ************************************************************************
-    def __init__(self, ser: Serial):
-        self._serial_port_check(ser)
-        self._ser = ser
-
-    def _serial_port_check(self, ser):
-        # List only what your class really needs (allows mocking)
-        required = ["write", "read", "close", "is_open"]
-
-        for name in required:
-            if not hasattr(ser, name):
-                raise TypeError(f"Serial-like object missing '{name}'")
-
-        # Optional: make sure it's actually open
-        if hasattr(ser, "is_open") and not ser.is_open:
+    def __init__(self, ser: serial.Serial):
+        if not ser.is_open:
             raise ValueError("Serial port must be open")
+        self.ser = ser
 
+        self.log = logging.getLogger(name=__class__.__name__)
+
+    # ---------- CRC Per documentation spec ----------
     @staticmethod
     def gen_crc(msg_bytes: bytes) -> int:
-        """
-        Generate CRC-8 (polynomial 0x31, initial value 0x00).
-        Returns a single byte (int 0-255).
-        """
         crc = LPB40B.CRC_START_VALUE
-        for byte in msg_bytes:
-            crc ^= byte
-            for _ in range(8):
+        bits_per_byte = 8
+        for current_byte in msg_bytes:
+            crc ^= current_byte
+            for _ in range(bits_per_byte):
                 if crc & 0x80:
                     crc = ((crc << 1) ^ LPB40B.CRC_POLYNOMIAL) & 0xFF
                 else:
                     crc = (crc << 1) & 0xFF
         return crc
-    
-    @staticmethod
-    def add_protocol_bytes(msg_bytes: bytes) -> bytes:
-        """
-        Wrap message with start, CRC, and stop bytes.
-        [START][payload...][CRC][STOP]
-        """
+
+    def _add_protocol_bytes(self, msg_bytes: bytes) -> bytes:
+        if len(msg_bytes) != 5:
+            raise ValueError("Payload must be exactly 5 bytes")
         crc = LPB40B.gen_crc(msg_bytes)
         return bytes([LPB40B.START_BYTE]) + msg_bytes + bytes([crc, LPB40B.STOP_BYTE])
 
-    # ----------- message builders -----------
-    @staticmethod
-    def gen_obtaining_equipment_information_message() -> bytes:
-        """Build 'Obtain Equipment Information' command frame."""
-        payload = bytes([LPB40B.MSG_GET_DEVICE_INFO, 0x00, 0x00, 0x00, 0x00])
-        return LPB40B.add_protocol_bytes(payload)
+    # ---------- High-level commands ----------
+    def begin(self):
+        self.ser.flush()
+        self.set_single_measurement_mode()
 
-    @staticmethod
-    def gen_obtaining_temperature_information_message() -> bytes:
-        """
-        Generate wrapped message for 'Obtain Temperature Information' (0x02).
-        
-        NOTE: This does not seem to get a response from the device as indicated in the documentation
-        """
-        payload = bytes([LPB40B.MSG_OBTAIN_TEMPERATURE, 0x00, 0x00, 0x00, 0x00])
-        return LPB40B.add_protocol_bytes(payload)
+    def set_single_measurement_mode(self):
+        """Put sensor into single measurement mode."""
+        self.log.debug("Setting device into single measurement mode.")
+        payload = bytes([self.CMD_SET_MEASUREMENT_MODE, 0x00, 0x00, 0x00, 0x01])
+        self._send(payload)
 
-    @staticmethod
-    def gen_set_measurement_frequency_message(freq: int) -> bytes:
-        """
-        Generate wrapped message for 'Set Measurement Frequency' (0x03).
-        NOTE: This function caps at 500 hz to not move the sensor into high speed frame mode
-   
-        Parameters
-        ----------
-        freq : int
-            Desired measurement frequency in Hz (1..500).
-    
-        Returns
-        -------
-        bytes
-            Full wrapped protocol message.
-    
-        Raises
-        ------
-        ValueError
-            If frequency is outside the allowed range.
-        """
-        if not (1 <= freq <= 500):
-            raise ValueError("Measurement frequency must be in range 1..500")
+        # Yes, this is needed - device hangs if you flood serial here
+        #  Value of 0.0025 seems to be sufficient
+        time.sleep(0.01)
 
-        # Convert to little-endian uint32 (matches most device protocols of this style)
-        freq_bytes = freq.to_bytes(4, byteorder="big", signed=False)
+    def get_measurement_mm(self) -> int:
+        """Take one measurement and return distance in mm."""
+        payload = bytes([self.CMD_START_MEASUREMENT, 0x00, 0x00, 0x00, 0x00])
+        self._send(payload)
 
-        # Payload: [command, b0, b1, b2, b3]
-        payload = bytes([LPB40B.MSG_SET_MEASUREMENT_FREQ]) + freq_bytes
-        return LPB40B.add_protocol_bytes(payload)
+        measurement_frame = self._read_frame()
 
-    @staticmethod
-    def gen_set_data_format_byte() -> bytes:
-        """
-        Generate the message to set the sensor into BYTE format for measurements.
-        """
-        # payload = [CMD, 00, 00, 00, 01]
-        BYTE_DATA_FORMAT_SETTING = 0x01
-        payload = bytes([LPB40B.MSG_FORMAT_DATA, 0x00, 0x00, 0x00, BYTE_DATA_FORMAT_SETTING])
-        crc = LPB40B.gen_crc(payload)
-        return bytes([LPB40B.START_BYTE]) + payload + bytes([crc, LPB40B.STOP_BYTE])
+        frame_payload = measurement_frame[1:6]
 
-    @staticmethod
-    def gen_set_data_format_pixhawk() -> bytes:
-        """
-        Generate the message to set the sensor into PIXHAWK format for measurements.
-        """
-        # payload = [CMD, 00, 00, 00, 01]
-        PIXHAWK_DATA_FORMAT_SETTING = 0x02
-        payload = bytes([LPB40B.MSG_FORMAT_DATA, 0x00, 0x00, 0x00, PIXHAWK_DATA_FORMAT_SETTING])
-        crc = LPB40B.gen_crc(payload)
-        return bytes([LPB40B.START_BYTE]) + payload + bytes([crc, LPB40B.STOP_BYTE])
+        return_cmd = frame_payload[0]
 
-    # ** 0x0D - Setting Measurment Mode Commands ****************************************************
-    @staticmethod
-    def gen_set_measurement_mode_continuous_startup() -> bytes:
-        """
-        Generate the message to set the sensor continually measure distance at boot.
-        """
-        MEASURMENT_MODE_CONTINUOUS_STARTUP = 0x00
-        payload = bytes([LPB40B.MSG_SET_MEASUREMENT_MODE, 0x00, 0x00, 0x00, MEASURMENT_MODE_CONTINUOUS_STARTUP])
-        crc = LPB40B.gen_crc(payload)
-        return bytes([LPB40B.START_BYTE]) + payload + bytes([crc, LPB40B.STOP_BYTE])
+        if return_cmd != self.CMD_MEASUREMENT_DATA:
+            raise ValueError(f"Measurement read invalid return data frame: {measurement_frame}")
 
-    @staticmethod
-    def gen_set_measurement_mode_single() -> bytes:
-        """
-        Generate the message to set the sensor to only measure once when requested.
-        """
-        MEASURMENT_MODE_SINGLE = 0x01
-        payload = bytes([LPB40B.MSG_SET_MEASUREMENT_MODE, 0x00, 0x00, 0x00, MEASURMENT_MODE_SINGLE])
-        crc = LPB40B.gen_crc(payload)
-        return bytes([LPB40B.START_BYTE]) + payload + bytes([crc, LPB40B.STOP_BYTE])
+        error_code = frame_payload[1:2]
+        measurement_bytes = frame_payload[-3:] # 3 bytes at end of payload (yes, 3 byte bigendian int)
+        dist_mm = int.from_bytes(measurement_bytes, byteorder="big")
+        return dist_mm
 
-    @staticmethod
-    def gen_set_measurement_mode_continuous_default_stopped() -> bytes:
-        """
-        Generate the message to set the sensor to measure continuously after being started
-        """
-        MEASURMENT_MODE_CONTINUOUS_DEFAULT_STOPPED = 0x02
-        payload = bytes([LPB40B.MSG_SET_MEASUREMENT_MODE, 0x00, 0x00, 0x00, MEASURMENT_MODE_CONTINUOUS_DEFAULT_STOPPED])
-        crc = LPB40B.gen_crc(payload)
-        return bytes([LPB40B.START_BYTE]) + payload + bytes([crc, LPB40B.STOP_BYTE])
+    def get_device_info(self, timeout=1.0) -> tuple:
+        """Fetch device info (2 frames). Returns a list of 2 raw frames."""
+        payload = bytes([self.CMD_GET_DEVICE_INFO, 0x00, 0x00, 0x00, 0x00])
+        self._send(payload)
 
-    # ** 0x05 Start Measuring Messages *****************************************************************
-    @staticmethod
-    def gen_start_measuring() -> bytes:
-        """ Generate the message to start measuring """
-        payload = bytes([LPB40B.MSG_START_MEASUREMENT, 0x00, 0x00, 0x00, 0x00])
-        crc = LPB40B.gen_crc(payload)
-        return bytes([LPB40B.START_BYTE]) + payload + bytes([crc, LPB40B.STOP_BYTE])
+        info_frame1 = self._read_frame()
+        info_frame2 = self._read_frame()
 
-    # ** 0x06 Stop Measuring Messages *****************************************************************
-    @staticmethod
-    def gen_stop_measuring() -> bytes:
-        """ Generate the message to stop measuring """
-        payload = bytes([LPB40B.MSG_STOP_MEASUREMENT, 0x00, 0x00, 0x00, 0x00])
-        crc = LPB40B.gen_crc(payload)
-        return bytes([LPB40B.START_BYTE]) + payload + bytes([crc, LPB40B.STOP_BYTE])
-
-    # ** 0x12 Set Baud Rate Messages ******************************************************************
-
-    @staticmethod
-    def gen_set_baud_rate(baud_rate: int) -> bytes:
-        """ Generate the message to set the sensor's baud rate.  """
-
-        if baud_rate not in LPB40B.BAUD_RATE_MAP:
-            raise ValueError(f"Unsupported baud rate: {baud_rate}")
-        
-        baud_hex = LPB40B.BAUD_RATE_MAP[baud_rate]
-        payload = bytes([LPB40B.MSG_SET_BAUD_RATE, 0x00, 0x00, 0x00, baud_hex])
-        crc = LPB40B.gen_crc(payload)
-        return bytes([LPB40B.START_BYTE]) + payload + bytes([crc, LPB40B.STOP_BYTE])
-
-    # ** ***********************************************************************************************
-    # ** Public API ************************************************************************************
-    # ** ***********************************************************************************************
-
-    def set_measurement_frequency(self, new_freq: int) -> None:
-        """
-        Set the LP40's sampling frequency
-
-        Parameters
-        ----------
-        new_freq : int
-            Desired measurement frequency in Hz (1..500).
-        """
-        msg = self.gen_set_measurement_frequency_message(new_freq)
-        self._ser.write(msg)
-
-    def set_measurement_mode_continuous_startup(self) -> None:
-        msg = self.gen_set_measurement_mode_continuous_startup()
-        self._ser.write(msg)
-    
-    def set_measurement_mode_single_measurement(self) -> None:
-        msg = self.gen_set_measurement_mode_single()
-        self._ser.write(msg)
-
-    def set_measurement_mode_continuous_default_stopped(self) -> None:
-        msg = self.gen_set_measurement_mode_continuous_default_stopped()
-        self._ser.write(msg)
-
-    def stop_measuring(self) -> None:
-        msg = self.gen_stop_measuring()
-        self._ser.write(msg)
-
-    def start_measuring(self) -> None:
-        msg = self.gen_start_measuring()
-        self._ser.write(msg)
-        self._ser.read(8)       # Clear the response from the device, which is one frame
+        return (info_frame1, info_frame2)
 
 
+    # ---------- Low-level I/O ----------
+    def _send(self, payload: bytes):
+        msg = self._add_protocol_bytes(payload)
+        self.log.debug(f"Sending to serial: {msg.hex(' ').upper()}")
+        self.ser.write(msg)
 
-    # NOTE: The device only seems to work in byte format anyway - suspending extra API
-    # def set_data_format_byte(self) -> None:
-    #     """ Set LP40 to send distance measurements in byte format (big endian) """
-    #     msg = self.gen_set_data_format_byte()
-    #     self._ser.write(msg)
+    def _read_frame(self, timeout=1.0) -> bytes:
+        """Read one frame, return as bytes, or None on timeout."""
+        self.ser.timeout = timeout
+        frame_bytes = bytearray()
 
-    # NOTE: This message doesn't seem to have any effect on the device
-    # def set_data_format_pixhawk(self) -> None:
-    #     """ Set LP40 to send distance measurements in pixhawk format (string number ending \r\n) """
-    #     msg = self.gen_set_data_format_pixhawk()
-    #     self._ser.write(msg)
+        while len(frame_bytes) < 8:
+            curr_byte = self.ser.read(1)
+            if not curr_byte:
+                raise TimeoutError(f"Sensor did not return full frame. Bytes read: {frame_bytes}")
+            else:
+                frame_bytes.extend(curr_byte)
 
-
-if __name__ == "__main__":
-    print("Testing the driver: see pytest")
+        return frame_bytes

@@ -53,7 +53,7 @@ class LPB40B:
         self._send(payload)
 
         # Yes, this is needed - device hangs if you flood serial here
-        #  Value of 0.0025 seems to be sufficient
+        #  Value of 0.01 seems to be sufficient
         time.sleep(0.01)
 
     def get_measurement_mm(self) -> int:

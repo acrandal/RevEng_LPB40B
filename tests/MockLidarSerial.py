@@ -8,7 +8,7 @@ class MockLidarSerial:
         self.STOP_BYTE = bytes([0xAA])
 
         # Mock interface
-        is_open = True   # Faking an open serial port
+        self.is_open = True   # Faking an open serial port
 
         # Internal state
         self.continuous_mode = False
@@ -62,6 +62,9 @@ class MockLidarSerial:
                 break
         return bytes(data)
     
+    def flush(self) -> None:
+        while not self._rx_queue.empty():
+            self._rx_queue.get_nowait()
 
     def _calc_crc(self, data: bytes) -> int:
         """Follows Sensor CRC spec (polynomial 31, start 0)"""

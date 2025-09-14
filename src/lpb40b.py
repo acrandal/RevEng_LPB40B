@@ -5,23 +5,31 @@
 #   Copyright: 2025
 #   License: GPL v3.0
 #
+# Communications protocol URL:
+#  SEN0586_Communication_protocol-EN.pdf
+#  https://github.com/May-DFRobot/DFRobot/blob/master/SEN0586_Communication_protocol-EN.pdf
+#
+# Product URL (accessed Sept 2025):
+#  https://www.dfrobot.com/product-2731.html
+#
 
 
 import time
 import serial
 import logging
 
+
 class LPB40B:
-    START_BYTE      = 0x55
-    STOP_BYTE       = 0xAA
-    CRC_POLYNOMIAL  = 0x31
+    START_BYTE = 0x55
+    STOP_BYTE = 0xAA
+    CRC_POLYNOMIAL = 0x31
     CRC_START_VALUE = 0
 
     # commands from SEN058 communications protocol
-    CMD_GET_DEVICE_INFO         = 0x01
-    CMD_START_MEASUREMENT       = 0x05
-    CMD_MEASUREMENT_DATA        = 0x07
-    CMD_SET_MEASUREMENT_MODE    = 0x0D
+    CMD_GET_DEVICE_INFO = 0x01
+    CMD_START_MEASUREMENT = 0x05
+    CMD_MEASUREMENT_DATA = 0x07
+    CMD_SET_MEASUREMENT_MODE = 0x0D
 
     def __init__(self, ser: serial.Serial):
         if not ser.is_open:
@@ -77,10 +85,14 @@ class LPB40B:
         return_cmd = frame_payload[0]
 
         if return_cmd != self.CMD_MEASUREMENT_DATA:
-            raise ValueError(f"Measurement read invalid return data frame: {measurement_frame}")
+            raise ValueError(
+                f"Measurement read invalid return data frame: {measurement_frame}"
+            )
 
         error_code = frame_payload[1:2]
-        measurement_bytes = frame_payload[-3:] # 3 bytes at end of payload (yes, 3 byte bigendian int)
+        measurement_bytes = frame_payload[
+            -3:
+        ]  # 3 bytes at end of payload (yes, 3 byte bigendian int)
         dist_mm = int.from_bytes(measurement_bytes, byteorder="big")
         return dist_mm
 
@@ -93,7 +105,6 @@ class LPB40B:
         info_frame2 = self._read_frame()
 
         return (info_frame1, info_frame2)
-
 
     # ---------- Low-level I/O ----------
     def _send(self, payload: bytes):
@@ -109,7 +120,9 @@ class LPB40B:
         while len(frame_bytes) < 8:
             curr_byte = self.ser.read(1)
             if not curr_byte:
-                raise TimeoutError(f"Sensor did not return full frame. Bytes read: {frame_bytes}")
+                raise TimeoutError(
+                    f"Sensor did not return full frame. Bytes read: {frame_bytes}"
+                )
             else:
                 frame_bytes.extend(curr_byte)
 

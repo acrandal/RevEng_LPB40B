@@ -1,5 +1,14 @@
+#
+#   LPB40B LiDAR range finder (DFRobot) driver
+#
+#   Author: Aaron S. Crandall <acrandal@gmail.com>
+#   Copyright: 2025
+#   License: GPL v3.0
+#
+
+
 import time
-import serial  # pyserial
+import serial
 import logging
 
 class LPB40B:

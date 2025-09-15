@@ -1,0 +1,27 @@
+## RELEASES FILE
+
+---
+
+v0.0.1 - 2025.09.15
+
+* Early Alpha - known issues
+* Python scripts cleaned up to basics
+* Features:
+  * Connects to device properly
+  * Get Info works to return raw bytes
+  * Get single measurement works to return millimeters
+* No additonal interfaces for other device controls
+* No high speed modes or advanced packet handling
+* No exposing error codes or error handling
+* No fixed UART speed controls
+* Only synchronous polling from device
+
+* Known bug: Get Info sometimes returns two double frames instead of the documented single double frame
+  * This leads the .get_measurement_mm() to raise an exception
+  * This seems to be a problem with the device itself. It just returns four frames instead of two
+
+* Contributors:
+  * Aaron S. Crandall \<acrandal@gmail.com>
+
+
+    

@@ -9,6 +9,7 @@ CMD_GET_INFO = 0x01
 
 @pytest.fixture
 def lpb40():
+    # Required to make type checking tools happy since MockLidarSerial is Duck Typed
     mock_serial = cast(serial.Serial, MockLidarSerial(distance_mm=2500))
 
     lpb40device = LPB40B(mock_serial)

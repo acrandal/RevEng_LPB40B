@@ -20,6 +20,10 @@ https://www.dfrobot.com/product-2731.html
 
 ---
 
+See RELEASES file for version, features, and bugs
+
+---
+
 Contributors: Aaron S. Crandall \<acrandal@gmail.com>  
 Copyright: 2025  
 License: LGPL, see LICENSE file for more information
